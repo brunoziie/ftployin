@@ -1,0 +1,33 @@
+{
+  "name": "ftployin",
+  "version": "1.0.0",
+  "description": "Deploy from git to ftp server",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brunoziie/ftployin.git"
+  },
+  "author": "brunoziie",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/brunoziie/ftployin/issues"
+  },
+  "homepage": "https://github.com/brunoziie/ftployin#readme",
+  "keywords": [
+    "ftp",
+    "git",
+    "deploy"
+  ],
+  "dependencies": {
+    "colors": "^1.1.2",
+    "ftp": "^0.3.10",
+    "ggit": "^1.11.1",
+    "promise": "^7.1.1"
+  },
+  "bin": {
+    "ftployin": "bin/ftployin"
+  }
+}

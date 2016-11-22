@@ -1,0 +1,8 @@
+#! /usr/bin/env node
+var ftployin = require('../src/index.js');
+
+if (process.argv.indexOf('init') > 0) {
+    ftployin.init();
+} else {
+    ftployin.deploy();
+}
