@@ -174,20 +174,31 @@ var processQueue = function (queue) {
 
             switch (item.mode) {
                 case 'upload':
-                    return ftpClient.put(item.path, getRemotePath(item.path), function (err) {
-                         (err) ? reject(err) : resolve();
-                    });
+                    fs.lstat(item.path, function (err, stats) {
+                        var path = item.path;
+
+                        if (stats.isSymbolicLink()) {
+                            path = fs.readFileSync(item.path).toString();
+                        }
+
+                        ftpClient.put(path, getRemotePath(item.path), function (err) {
+                            return (err) ? reject(err) : resolve();
+                        });
+                    })
+
+                    return;
+
                 case 'delete':
                     return ftpClient.delete(getRemotePath(item.path), true, function (err, files) {
-                         (err) ? reject(err) : resolve();
+                        return (err) ? reject(err) : resolve();
                     });
                 case 'mkdir':
                     return ftpClient.mkdir(getRemotePath(item.path), true, function (err, files) {
-                         (err) ? reject(err) : resolve();
+                        return (err) ? reject(err) : resolve();
                     });
                 case 'rmdir':
                     return ftpClient.rmdir(getRemotePath(item.path), true, function (err, files) {
-                         (err) ? reject(err) : resolve();
+                        return (err) ? reject(err) : resolve();
                     });
                 default:
                     return reject(new Error('Invalid job mode "' + item.mode + '"'));
@@ -209,7 +220,7 @@ var processQueue = function (queue) {
             doItemJob(item).then(function () {
                 doneItens.push(item);
                 processNext();
-            });
+            }).catch(reject);
         };
 
         processNext();
@@ -259,10 +270,6 @@ exports.deploy = function () {
     
     getFirstCommit()
         .then(getDiff)
-        .then(function () {
-            console.log(arguments);
-            return Promise.resolve(arguments[0]);
-        })
         .then(diffParser)
         .then(parseQueue)
         .then(function (queue) {
