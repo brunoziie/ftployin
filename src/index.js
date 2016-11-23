@@ -230,7 +230,28 @@ var disconnectRemoteServer = function () {
 }
 
 var getDiff = function (initialCommit) {
-    return git.exec('git diff --name-status ' + initialCommit + ' HEAD', false);
+    return new Promise(function (resolve, reject) {
+        var args = 'diff --name-status ' + initialCommit + ' HEAD',
+            spawn = require('child_process').spawn,
+            diff = spawn('git', args.split(' ')),
+            buffer = '';
+
+        diff.stdout.on('data', (data) => {
+            buffer += data;
+        });
+
+        diff.stderr.on('data', (data) => {
+            reject(data);
+        });
+
+        diff.on('close', (code) => {
+            if (code === 0) {
+                resolve(buffer);
+            } else {
+                reject(new Error('Error when try to get commits diff'));
+            }
+        });
+    });
 }
 
 exports.deploy = function () {
@@ -238,6 +259,10 @@ exports.deploy = function () {
     
     getFirstCommit()
         .then(getDiff)
+        .then(function () {
+            console.log(arguments);
+            return Promise.resolve(arguments[0]);
+        })
         .then(diffParser)
         .then(parseQueue)
         .then(function (queue) {
