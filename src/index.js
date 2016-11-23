@@ -268,8 +268,8 @@ exports.deploy = function () {
         })
         .catch(function (err) {
             console.log('=> Deployment failed.'.red);
-            console.log(err.stack);
-            throw err;
+            console.log((err && err.stack) ? err.stack : err);
+            process.exit(1);
         });
 };
 
