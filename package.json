@@ -1,6 +1,6 @@
 {
   "name": "ftployin",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Deploy from git to ftp server",
   "main": "index.js",
   "scripts": {

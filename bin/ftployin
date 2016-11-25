@@ -1,8 +1,29 @@
 #! /usr/bin/env node
 var ftployin = require('../src/index.js');
+var ui = require('../src/ui.js');
+var colors = require('colors');
+var ascii = [
+    "",
+    "      __  _           _                _        ",
+    "     / _|| |_  _ __  | |  ___   _   _ (_) _ __  ",
+    "    | |_ | __|| '_ \\ | | / _ \\ | | | || || '_ \\ ",
+    "    |  _|| |_ | |_) || || (_) || |_| || || | | |",
+    "    |_|   \\__|| .__/ |_| \\___/  \\__, ||_||_| |_|",
+    "              |_|               |___/          ",
+    ""
+];
+
+console.log(ui.createFullWidthLine(false, 'top').green);
+console.log(ascii.map(ui.drawBoxEdges).join('\n').green);
+console.log(ui.createFullWidthLine().green);
 
 if (process.argv.indexOf('init') > 0) {
-    ftployin.init();
-} else {
-    ftployin.deploy();
+    return ftployin.init();
 }
+
+if (process.argv.indexOf('reset') > 0) {
+    return ftployin.resetCommit();
+}
+
+
+ftployin.deploy();

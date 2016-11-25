@@ -6,6 +6,27 @@ var git = require("ggit");
 var fs = require('fs');
 var opts;
 var colors = require('colors');
+var excludeRules;
+var ui = require('./ui.js');
+
+var getExcludeRules = function () {
+    var exclude = opts.exclude || false;
+
+    if (excludeRules) {
+        return excludeRules;
+    }
+
+    if (!exclude) {
+        return false;
+    }
+
+    if (typeof exclude === 'string') {
+        exclude = [exclude];
+    }
+
+    excludeRules = exclude.map((rule) => new RegExp(rule));
+    return excludeRules;
+}
 
 var getConfig = function () {
     var configFile = CONFIG_FILE,
@@ -25,6 +46,7 @@ var updateConfig = function (curHash) {
     return Promise.resolve();
 }
 
+
 var parseCommitHash = function (line) {
     var hash = line.split(' ')[0] || null;
 
@@ -37,15 +59,16 @@ var parseCommitHash = function (line) {
 
 var getFirstCommit = function () {
     return new Promise(function (resolve, reject) {
-        var cmd = 'git log --oneline --no-abbrev-commit | tail -1';
+        // var cmd = 'git log --oneline --no-abbrev-commit | tail -1';
 
         if (opts.lastCommit) {
             return resolve(opts.lastCommit);
         } else {
-            git.exec(cmd, false)
-                .then(parseCommitHash)
-                .then(resolve)
-                .catch(reject);
+            return resolve(null);
+            // git.exec(cmd, false)
+            //     .then(parseCommitHash)
+            //     .then(resolve)
+            //     .catch(reject);
         }
     });
 }
@@ -75,6 +98,13 @@ var dirExists = function (dir) {
     return fs.existsSync(dir);
 }
 
+var checkIsExcluded = function (path) {
+    var rules = getExcludeRules(),
+        matchs = rules.filter((rule) => rule.test(path));
+
+    return matchs.length > 0;
+}
+
 var parseQueue = function (files) {
     return new Promise(function (resolve, reject) {
         var queue = [],
@@ -86,6 +116,10 @@ var parseQueue = function (files) {
 
         for (x = 0; x < len; x += 1) {
             file = files[x];
+
+            if (checkIsExcluded(file.name)) {
+                continue;
+            }
 
             if (file.mode === 'A') {
                 dir = getDirPath(file.name);
@@ -168,9 +202,16 @@ var processQueue = function (queue) {
 
     doItemJob = function (item) {
         return new Promise(function (resolve, reject) {
-            var space = (item.mode.length === 5) ? '  ' : ' ';
+            var space = (item.mode.length === 5) ? '  ' : ' ',
+                remote = (process.argv.indexOf('--debug') >= 0)
+                    ? (item.mode === 'upload' ? ' -> ' + getRemotePath(item.path) : '')
+                    : '';
 
-            console.log((' [' + item.mode + ']' + space + item.path).green);
+            console.log(
+                ui.drawBoxEdges(
+                    ('[' + item.mode + ']' + space + item.path + remote)
+                ).green
+            );
 
             switch (item.mode) {
                 case 'upload':
@@ -214,6 +255,7 @@ var processQueue = function (queue) {
             var item = _queue.next();
 
             if (item === false) {
+                console.log(ui.drawBoxEdges('').green);
                 return resolve(doneItens);
             }
 
@@ -242,9 +284,27 @@ var disconnectRemoteServer = function () {
 
 var getDiff = function (initialCommit) {
     return new Promise(function (resolve, reject) {
-        var args = 'diff --name-status ' + initialCommit + ' HEAD',
+        if (initialCommit === null) {
+            getRevTree()
+                .then(function (list) {
+                    resolve(list.map((line) => 'A\t' + line)
+                        .join('\n'));
+                })
+                .catch(reject);
+        } else {
+            getGitDiff(initialCommit, 'HEAD')
+                .then(resolve)
+                .catch(reject);
+        }
+    });
+}
+
+
+var getGitDiff = function (start, end) {
+    return new Promise(function (resolve, reject) {
+        var args = ['diff', '--name-status', start , end],
             spawn = require('child_process').spawn,
-            diff = spawn('git', args.split(' ')),
+            diff = spawn('git', args),
             buffer = '';
 
         diff.stdout.on('data', (data) => {
@@ -265,16 +325,45 @@ var getDiff = function (initialCommit) {
     });
 }
 
+var getRevTree = function () {
+    return new Promise(function (resolve, reject) {
+        var args = 'ls-tree -r HEAD --name-only',
+            spawn = require('child_process').spawn,
+            diff = spawn('git', args.split(' ')),
+            buffer = '';
+
+        diff.stdout.on('data', (data) => {
+            buffer += data;
+        });
+
+        diff.stderr.on('data', (data) => {
+            reject(data);
+        });
+
+        diff.on('close', (code) => {
+            if (code === 0) {
+                resolve(buffer.split('\n').filter((line) => line.trim().length > 0 ));
+            } else {
+                reject(new Error('Error when try to get rev tree'));
+            }
+        });
+    });
+}
+
 exports.deploy = function () {
     opts = getConfig();
-    
+
     getFirstCommit()
         .then(getDiff)
         .then(diffParser)
         .then(parseQueue)
         .then(function (queue) {
             if (queue.length > 0) {
-                console.log('=> Starting deployment'.green);
+                var count = queue.filter((cur) => cur.mode === 'upload' || cur.mode === 'delete').length;
+
+                console.log(ui.drawBoxEdges(('> Changed files: ' + count)).green);
+                console.log(ui.drawBoxEdges('> Starting deployment... ').green);
+                console.log(ui.drawBoxEdges('').green);
 
                 return new Promise(function (resolve, reject) {
                     connectRemoteServer().then(function (arguments) {
@@ -282,24 +371,22 @@ exports.deploy = function () {
                     }).catch(reject);
                 });
             } else {
-                console.log('=> Already up to date. Nothing to deploy.'.yellow);
+                console.log(ui.drawBoxEdges('Already up to date. Nothing to deploy.').yellow);
                 process.exit(0);
             }
         })
         .then(processQueue)
-        .then(function (queue) {
-            //console.log(queue);
-            return Promise.resolve();
-        })
         .then(getCurrentCommit)
         .then(updateConfig)
         .then(disconnectRemoteServer)
         .then(function () {
-            console.log('=> Deployment done.'.green);
+            console.log(ui.drawBoxEdges('> Deployment done!').green);
+            console.log(ui.createFullWidthLine(false, 'bottom').green);
             process.exit(0);
         })
         .catch(function (err) {
-            console.log('=> Deployment failed.'.red);
+            console.log(ui.drawBoxEdges('> Deployment failed!').red);
+            console.log(ui.createFullWidthLine(false, 'bottom').green);
             console.log((err && err.stack) ? err.stack : err);
             process.exit(1);
         });
@@ -312,8 +399,18 @@ exports.init = function () {
             user: 'USERNAME',
             password: 'PASSWORD',
             remoteDir: '',
-            lastCommit: null
+            lastCommit: null,
+            exclude: null
         };
 
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(configObj, true, 2));
+    console.log('[created] deploy.json'.green);
+    console.log(ui.createFullWidthLine().green);
+};
+
+exports.resetCommit = function () {
+    opts = getConfig();
+    updateConfig(null);
+    console.log(ui.drawBoxEdges('Last commit setted up as null in deploy.json file').green);
+    console.log(ui.createFullWidthLine(false, 'bottom').green);
 }
