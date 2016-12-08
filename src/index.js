@@ -230,7 +230,7 @@ var processQueue = function (queue) {
                     return;
 
                 case 'delete':
-                    return ftpClient.delete(getRemotePath(item.path), true, function (err, files) {
+                    return ftpClient.delete(getRemotePath(item.path), function (err, files) {
                         return (err) ? reject(err) : resolve();
                     });
                 case 'mkdir':
