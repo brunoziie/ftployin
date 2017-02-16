@@ -4,20 +4,17 @@ var ftp = require('ftp');
 var ftpClient = new ftp();
 var git = require("ggit");
 var fs = require('fs');
-var opts;
+var envOpts;
+var allOpts;
 var colors = require('colors');
 var excludeRules;
 var ui = require('./ui.js');
 
 var getExcludeRules = function () {
-    var exclude = opts.exclude || false;
+    var exclude = envOpts.exclude || [];
 
     if (excludeRules) {
         return excludeRules;
-    }
-
-    if (!exclude) {
-        return false;
     }
 
     if (typeof exclude === 'string') {
@@ -28,24 +25,55 @@ var getExcludeRules = function () {
     return excludeRules;
 }
 
+var getCurrentEnviroment = function () {
+    var args;
+
+    args = process.argv.slice(2).filter(function (cur) {
+        return cur !== 'init' && cur !== 'reset'
+    });
+
+    return args[0] || 'development';
+}
+
 var getConfig = function () {
     var configFile = CONFIG_FILE,
-        content;
+        enviroment = getCurrentEnviroment(),
+        content,
+        configs;
 
     if (fs.existsSync(configFile)) {
         content = fs.readFileSync(configFile);
-        return JSON.parse(content);
+        configs = JSON.parse(content);
+
+        if (!configs.envs) {
+            configs = {
+                envs: {
+                    development: configs
+                }
+            };
+
+            writeConfigFile(configs);
+        }
+
+        envOpts = configs.envs[enviroment];
+        allOpts = configs;
     } else {
         throw new Error('File "deploy.json" not found. Run `ftployin init` to generate the deploy config file');
     }
+
+    validateEnvOpts();
 }
 
-var updateConfig = function (curHash) {
-    opts.lastCommit = curHash;
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(opts, true, 2));
+var writeConfigFile = function (data) {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, true, 2));
     return Promise.resolve();
 }
 
+var updateConfig = function (curHash) {
+    var enviroment = getCurrentEnviroment();
+    allOpts.envs[enviroment].lastCommit = curHash;
+    return writeConfigFile(allOpts);
+}
 
 var parseCommitHash = function (line) {
     var hash = line.split(' ')[0] || null;
@@ -61,8 +89,8 @@ var getFirstCommit = function () {
     return new Promise(function (resolve, reject) {
         // var cmd = 'git log --oneline --no-abbrev-commit | tail -1';
 
-        if (opts.lastCommit) {
-            return resolve(opts.lastCommit);
+        if (envOpts.lastCommit) {
+            return resolve(envOpts.lastCommit);
         } else {
             return resolve(null);
             // git.exec(cmd, false)
@@ -191,8 +219,8 @@ var arr2iterator = function (array) {
 }
 
 var getRemotePath = function (path) {
-    return (opts.remoteDir !== '' && opts.remoteDir !== null)
-        ? opts.remoteDir + '/' + path
+    return (envOpts.remoteDir !== '' && envOpts.remoteDir !== null)
+        ? envOpts.remoteDir + '/' + path
         : path;
 }
 
@@ -273,7 +301,7 @@ var connectRemoteServer = function () {
     return new Promise(function (resolve, reject) {
         ftpClient.on('ready', resolve);
         ftpClient.on('error', reject);
-        ftpClient.connect(opts);
+        ftpClient.connect(envOpts);
     });
 }
 
@@ -350,8 +378,19 @@ var getRevTree = function () {
     });
 }
 
+var validateEnvOpts = function () {
+    var enviroment;
+
+    if (!envOpts) {
+        enviroment = getCurrentEnviroment();
+        console.log(ui.drawBoxEdges('> Invalid enviroment "' + enviroment + '"!', 'red'));
+        console.log(ui.createFullWidthLine(false, 'bottom').green);
+        process.exit(0);
+    }
+}
+
 exports.deploy = function () {
-    opts = getConfig();
+    getConfig();
 
     getFirstCommit()
         .then(getDiff)
@@ -361,9 +400,9 @@ exports.deploy = function () {
             if (queue.length > 0) {
                 var count = queue.filter((cur) => cur.mode === 'upload' || cur.mode === 'delete').length;
 
-                console.log(ui.drawBoxEdges(('> Changed files: ' + count)).green);
-                console.log(ui.drawBoxEdges('> Starting deployment... ').green);
-                console.log(ui.drawBoxEdges('').green);
+                console.log(ui.drawBoxEdges(('> Changed files: ' + count)));
+                console.log(ui.drawBoxEdges('> Starting deployment... '));
+                console.log(ui.drawBoxEdges(''));
 
                 return new Promise(function (resolve, reject) {
                     connectRemoteServer().then(function (arguments) {
@@ -371,7 +410,7 @@ exports.deploy = function () {
                     }).catch(reject);
                 });
             } else {
-                console.log(ui.drawBoxEdges('Already up to date. Nothing to deploy.').yellow);
+                console.log(ui.drawBoxEdges('Already up to date. Nothing to deploy.', 'yellow'));
                 process.exit(0);
             }
         })
@@ -380,12 +419,12 @@ exports.deploy = function () {
         .then(updateConfig)
         .then(disconnectRemoteServer)
         .then(function () {
-            console.log(ui.drawBoxEdges('> Deployment done!').green);
+            console.log(ui.drawBoxEdges('> Deployment done!'));
             console.log(ui.createFullWidthLine(false, 'bottom').green);
             process.exit(0);
         })
         .catch(function (err) {
-            console.log(ui.drawBoxEdges('> Deployment failed!').red);
+            console.log(ui.drawBoxEdges('> Deployment failed!', 'red'));
             console.log(ui.createFullWidthLine(false, 'bottom').green);
             console.log((err && err.stack) ? err.stack : err);
             process.exit(1);
@@ -394,23 +433,26 @@ exports.deploy = function () {
 
 exports.init = function () {
     var configObj = {
-            host: 'HOSTNAME_OR_IP',
-            port: 21,
-            user: 'USERNAME',
-            password: 'PASSWORD',
-            remoteDir: '',
-            lastCommit: null,
-            exclude: null
+            envs: {
+                development: {
+                    host: 'HOSTNAME_OR_IP',
+                    port: 21,
+                    user: 'USERNAME',
+                    password: 'PASSWORD',
+                    remoteDir: '',
+                    lastCommit: null,
+                    exclude: null
+                }
+            }
         };
 
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(configObj, true, 2));
-    console.log('[created] deploy.json'.green);
-    console.log(ui.createFullWidthLine().green);
+    writeConfigFile(configObj);
+    console.log(ui.drawBoxEdges('[created] deploy.json'));
+    console.log(ui.createFullWidthLine(false, 'bottom').green);
 };
 
 exports.resetCommit = function () {
-    opts = getConfig();
     updateConfig(null);
-    console.log(ui.drawBoxEdges('Last commit setted up as null in deploy.json file').green);
+    console.log(ui.drawBoxEdges('Last commit setted up as null in deploy.json file'));
     console.log(ui.createFullWidthLine(false, 'bottom').green);
 }

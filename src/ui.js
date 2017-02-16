@@ -1,3 +1,6 @@
+var MAX_LINE_SIZE = 110;
+var colors = require('colors');
+
 function chunkString(str, len) {
   var _size = Math.ceil(str.length/len),
       _ret  = new Array(_size),
@@ -14,11 +17,13 @@ function chunkString(str, len) {
 
 
 exports.createFullWidthLine = function (char, position) {
-    var content;
+    var content, cols;
 
     char = char || '-';
     position = position || 'middle';
-    content = char.repeat(process.stdout.columns - 2);
+    cols = (process.stdout.columns > MAX_LINE_SIZE) ? MAX_LINE_SIZE : process.stdout.columns;
+
+    content = char.repeat(cols - 2);
 
     switch (position) {
         case 'top':
@@ -30,14 +35,24 @@ exports.createFullWidthLine = function (char, position) {
     }
 }
 
-exports.drawBoxEdges = function (line) {
-    var maxLineSize = process.stdout.columns - 4;
+exports.drawBoxEdges = function (line, color) {
+    var cols = (process.stdout.columns > MAX_LINE_SIZE) ? MAX_LINE_SIZE : process.stdout.columns,
+        maxLineSize = cols - 4,
+        __color = (typeof color === 'string') ? color : 'green';
 
-    if (line.length > maxLineSize) {
-        line = chunkString(line, maxLineSize);
-        return line.map(exports.drawBoxEdges).join('\n');
-    }
+    // if (line.length > maxLineSize) {
+    //     line = chunkString(line, maxLineSize);
+    //     return line.map(function (curline) {
+    //         return exports.drawBoxEdges(curline, __color);
+    //     }).join('\n');
+    // }
 
+    var linewithspaces = (line + ' '.repeat(maxLineSize + 1 - line.length));
+    var colorRender = colors[__color];
 
-    return '│ ' + line + ' '.repeat(maxLineSize + 1 - line.length) + '│';
+    return [
+        ('│ '.green),
+        colorRender(linewithspaces),
+        ('│'.green)
+    ].join('');
 }
